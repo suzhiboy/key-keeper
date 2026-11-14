@@ -1,0 +1,10 @@
+node_modules/
+dist/
+src-tauri/target/
+.superpowers/
+*.kkv
+*.kkv.*
+*.log
+.env*
+!.env.example
+private-data/
