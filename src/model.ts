@@ -21,7 +21,7 @@ export const kindLabels: Record<Kind, string> = {
 };
 
 export const fieldLabels: Record<string, string> = {
-  title: '名称', tags: '标签', notes: '备注',
+  title: '名称', tags: '标签', notes: '备注', used: '已使用状态',
   platform: '平台', username: '用户名', email: '邮箱', phone: '手机号', password: '密码', website: '网站',
   provider: '服务商', endpoint: '接口地址', secret: 'API 密钥',
   issuer: '签发方', accountName: '账户名', totpSecret: '验证码密钥',

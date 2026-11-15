@@ -25,7 +25,7 @@ export function ImportWizard({ run, close, notify, imported }: {
   const [preview, setPreview] = useState<ImportPreview>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const applicableFields = ['title', ...fieldsFor(kind), 'tags', 'notes'];
+  const applicableFields = ['title', ...fieldsFor(kind), ...(kind === 'card' ? ['used'] : []), 'tags', 'notes'];
 
   async function action(operation: () => Promise<void>) {
     setBusy(true);
