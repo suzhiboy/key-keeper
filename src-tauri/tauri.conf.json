@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Key Keeper",
+  "version": "0.1.0",
+  "identifier": "com.keykeeper.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "label": "main", "title": "Key Keeper · 账户保险箱", "width": 1280, "height": 840, "minWidth": 900, "minHeight": 620 }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
+      "capabilities": [{ "identifier": "main-window", "windows": ["main"], "permissions": ["core:event:default"] }]
+    }
+  },
+  "bundle": { "active": true, "targets": ["nsis"], "icon": ["icons/icon.ico", "icons/icon.png"], "shortDescription": "离线个人账户保险箱", "windows": { "nsis": { "languages": ["SimpChinese"], "displayLanguageSelector": false, "installMode": "currentUser" } } }
+}
