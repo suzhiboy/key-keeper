@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Archive, ArrowLeft, ChevronRight, Download, FolderOpen, LockKeyhole, Plus, Search, Settings2, Tag, Upload, X } from 'lucide-react';
 import { kindLabels, kinds, makeDraft, recordSubtitle, type Kind, type VaultRecord } from './model';
 import { errorMessage, type Run } from './rpc';
@@ -15,7 +15,6 @@ export function Vault({ run, lock, notify, dark, switchTheme }: {
 }) {
   const [filter, setFilter] = useState<Filter>({});
   const [query, setQuery] = useState('');
-  const [records, setRecords] = useState<VaultRecord[]>([]);
   const [all, setAll] = useState<VaultRecord[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState('');
@@ -33,7 +32,21 @@ export function Vault({ run, lock, notify, dark, switchTheme }: {
   const [dialog, setDialog] = useState<'settings' | 'import'>();
   const searchRef = useRef<HTMLInputElement>(null);
   const searchId = useId();
-  const filtered = Boolean(filter.kind || filter.tag || query.trim());
+  const keyword = query.trim().toLowerCase();
+  const filtered = Boolean(filter.kind || filter.tag || keyword);
+  const searchIndex = useMemo(() => all.map((record) => ({
+    record,
+    terms: [record.title, record.notes, ...record.tags, ...Object.values(record.fields)]
+      .map((value) => value.toLowerCase()),
+  })), [all]);
+  const records = useMemo(() => {
+    if (!filtered) return all;
+    return searchIndex.filter(({ record, terms }) =>
+      (!filter.kind || filter.kind === record.kind) &&
+      (!filter.tag || record.tags.includes(filter.tag)) &&
+      (!keyword || terms.some((value) => value.includes(keyword)))
+    ).map(({ record }) => record);
+  }, [all, filter, filtered, keyword, searchIndex]);
 
   useEffect(() => {
     let active = true;
@@ -41,16 +54,15 @@ export function Vault({ run, lock, notify, dark, switchTheme }: {
     setListError('');
     async function load() {
       try {
-        const request = run('list', filtered ? { query: query.trim(), ...filter } : undefined);
-        const [list, catalogue] = await Promise.all([request, filtered ? run('list') : request]);
-        if (active) { setRecords(list); setAll(catalogue); }
+        const catalogue = await run('list');
+        if (active) setAll(catalogue);
       } catch (error) {
-        if (active) { setRecords([]); setListError(errorMessage(error)); }
+        if (active) { setAll([]); setListError(errorMessage(error)); }
       } finally { if (active) setListLoading(false); }
     }
-    const timer = window.setTimeout(load, query ? 150 : 0);
-    return () => { active = false; window.clearTimeout(timer); };
-  }, [filter, filtered, query, refresh, run]);
+    void load();
+    return () => { active = false; };
+  }, [refresh, run]);
 
   useEffect(() => {
     let active = true;
@@ -141,8 +153,15 @@ export function Vault({ run, lock, notify, dark, switchTheme }: {
     finally { setConfirmBusy(false); }
   }
 
-  const collator = new Intl.Collator('zh-CN');
-  const tags = [...new Set(all.flatMap((record) => record.tags))].sort(collator.compare);
+  const { tags, counts } = useMemo(() => {
+    const uniqueTags = new Set<string>();
+    const counts: Record<Kind, number> = { login: 0, api: 0, totp: 0, card: 0 };
+    for (const record of all) {
+      counts[record.kind]++;
+      record.tags.forEach((tag) => uniqueTags.add(tag));
+    }
+    return { tags: [...uniqueTags].sort(new Intl.Collator('zh-CN').compare), counts };
+  }, [all]);
   const title = filter.kind ? kindLabels[filter.kind] : filter.tag ?? '全部记录';
   const emptyTitle = filtered ? '未找到匹配的记录' : '保险库还没有记录';
   const emptyPrompt = query.trim() ? '换个关键词试试。' : filtered ? '这里还没有对应的记录。' : '创建第一条记录，或从文件中批量导入。';
@@ -160,7 +179,7 @@ export function Vault({ run, lock, notify, dark, switchTheme }: {
           {kinds.map((kind) => <button className={filter.kind === kind ? 'nav-item selected' : 'nav-item'}
             aria-current={filter.kind === kind || undefined} key={kind} onClick={() => navigate({ kind })}>
             <KindIcon kind={kind} size={17} /><span>{kindLabels[kind]}</span>
-            <small>{all.filter((record) => record.kind === kind).length}</small>
+            <small>{counts[kind]}</small>
           </button>)}
         </div>
         <div className="nav-group tag-group">
@@ -193,6 +212,7 @@ export function Vault({ run, lock, notify, dark, switchTheme }: {
         {query && <IconButton label="清空搜索" onClick={() => { setQuery(''); searchRef.current?.focus(); }}><X size={15} /></IconButton>}
       </div>
       <Notice>{listError}</Notice>
+      {listError && <button className="text-button" onClick={() => setRefresh((value) => value + 1)}>重新读取记录</button>}
       <div className="record-list">
         {!listLoading && !listError && records.length === 0 && <div className="list-empty">
           <FolderOpen size={25} strokeWidth={1.45} /><p>{emptyTitle}</p>
@@ -216,7 +236,7 @@ export function Vault({ run, lock, notify, dark, switchTheme }: {
             ? <RecordDetails key={`${detail.id}-${refresh}`} record={detail} run={run} notify={notify}
                 edit={() => startEdit(detail)} remove={() => remove(detail)} />
             : <div className="detail-loading"><Notice>{detailError}</Notice>{!detailError && <p>正在读取记录…</p>}</div>
-          : <div className="detail-empty">
+          : !listError && <div className="detail-empty">
             <div className="empty-motif" aria-hidden><i /><i /><Archive size={30} strokeWidth={1.45} /></div>
             <h2>{all.length > 0 || listLoading ? '选择一条记录' : '保险库还没有记录'}</h2>
             <p>{all.length > 0 || listLoading ? '从列表打开记录，查看详情或编辑。' : emptyPrompt}</p>

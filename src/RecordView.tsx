@@ -17,7 +17,11 @@ export function RecordEditor({ edit, change, save, cancel, busy, error }: {
   const { draft, record } = edit;
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const update = (value: Partial<Draft>) => change({ ...edit, draft: { ...draft, ...value } });
-  const changeKind = (kind: Kind) => { setShown({}); update({ kind, fields: {}, used: false }); };
+  const changeKind = (kind: Kind) => {
+    if (kind === draft.kind) return;
+    setShown({});
+    update({ kind, fields: {}, used: false });
+  };
 
   function field(name: string) {
     const secret = isSecret(name);

@@ -25,6 +25,37 @@ afterEach(() => {
 });
 
 describe('vault UI', () => {
+  function openTestVault() {
+    vi.mocked(subscribeToLock).mockResolvedValue(() => {});
+    vi.mocked(commands).mockImplementation(async (op) => {
+      if (op === 'status') return session;
+      if (op === 'list') return [partial, { ...partial, id: 'two', title: '私人帐号', fields: {}, notes: 'Weekend' }];
+      if (op === 'activity') return null;
+      throw new Error(op);
+    });
+    render(<App />);
+    return userEvent.setup();
+  }
+
+  it('searches notes case-insensitively without requesting the catalogue again', async () => {
+    const user = openTestVault();
+    await screen.findByRole('button', { name: /工作帐号/ });
+    await user.type(screen.getByRole('searchbox'), 'WEEK');
+    expect(screen.queryByRole('button', { name: /工作帐号/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /私人帐号/ })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '清空搜索' }));
+    expect(screen.getByRole('button', { name: /工作帐号/ })).toBeTruthy();
+    expect(vi.mocked(commands).mock.calls.filter(([op]) => op === 'list')).toHaveLength(1);
+  });
+
+  it('preserves draft fields when the selected record type is clicked again', async () => {
+    const user = openTestVault();
+    await screen.findByRole('button', { name: /工作帐号/ });
+    await user.click(screen.getByRole('button', { name: '新建记录' }));
+    await user.type(screen.getByLabelText('邮箱'), 'draft@example.test');
+    await user.click(screen.getByRole('button', { name: '登录信息' }));
+    expect(screen.getByDisplayValue('draft@example.test')).toBeTruthy();
+  });
   it('persists a manually selected theme without persisting records', async () => {
     localStorage.clear();
     vi.mocked(subscribeToLock).mockResolvedValue(() => {});
