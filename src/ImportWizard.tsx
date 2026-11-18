@@ -7,6 +7,11 @@ import { Modal, Notice } from './ui';
 type Source = { encoding: 'utf8' | 'gb18030'; delimiter: string; sheet: string; hasHeader: boolean };
 type Columns = { columns: string[]; mapping: Record<string, number> };
 const rowStatus = { valid: '可导入', duplicate: '重复', error: '错误' };
+const previewPageSize = 50;
+
+function importFields(kind: Kind) {
+  return ['title', ...fieldsFor(kind), ...(kind === 'card' ? ['used'] : []), 'tags', 'notes'];
+}
 
 function initialSource(file: ImportFile): Source {
   const txt = file.fileName?.toLowerCase().endsWith('.txt');
@@ -23,9 +28,10 @@ export function ImportWizard({ run, close, notify, imported }: {
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [skipErrors, setSkipErrors] = useState(false);
   const [preview, setPreview] = useState<ImportPreview>();
+  const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const applicableFields = ['title', ...fieldsFor(kind), ...(kind === 'card' ? ['used'] : []), 'tags', 'notes'];
+  const applicableFields = importFields(kind);
 
   async function action(operation: () => Promise<void>) {
     setBusy(true);
@@ -58,21 +64,25 @@ export function ImportWizard({ run, close, notify, imported }: {
       mapping, skipDuplicates });
   }
 
+  function matchColumns(names: string[], targetKind: Kind): Columns {
+    const mapping: Record<string, number> = {};
+    if (source.hasHeader) {
+      for (const field of importFields(targetKind)) {
+        const index = names.findIndex((column) => [field.toLowerCase(), fieldLabels[field]].includes(column.trim().toLowerCase()));
+        if (index >= 0) mapping[field] = index;
+      }
+    }
+    const oneColumnTxt = file?.fileName?.toLowerCase().endsWith('.txt') && names.length === 1;
+    if (oneColumnTxt && targetKind === 'card') mapping.secretCode = 0;
+    if (oneColumnTxt && targetKind === 'totp') mapping.totpSecret = 0;
+    return { columns: names, mapping };
+  }
+
   function readColumns() {
     setColumns(undefined);
     void action(async () => {
       const data = await previewRequest({});
-      const mapping: Record<string, number> = {};
-      if (source.hasHeader) {
-        for (const field of applicableFields) {
-          const index = data.columns.findIndex((column) => [field.toLowerCase(), fieldLabels[field]].includes(column.trim().toLowerCase()));
-          if (index >= 0) mapping[field] = index;
-        }
-      }
-      const oneColumnTxt = file?.fileName?.toLowerCase().endsWith('.txt') && data.columns.length === 1;
-      if (oneColumnTxt && kind === 'card') mapping.secretCode = 0;
-      if (oneColumnTxt && kind === 'totp') mapping.totpSecret = 0;
-      setColumns({ columns: data.columns, mapping });
+      setColumns(matchColumns(data.columns, kind));
     });
   }
 
@@ -96,6 +106,7 @@ export function ImportWizard({ run, close, notify, imported }: {
     if (!Object.keys(columns.mapping).length) { setError('至少选择一个要导入的字段。'); return; }
     void action(async () => {
       setSkipErrors(false);
+      setPage(0);
       setPreview(await previewRequest(columns.mapping));
     });
   }
@@ -131,7 +142,10 @@ export function ImportWizard({ run, close, notify, imported }: {
       </div>
       <fieldset className="import-options" disabled={busy}>
         <label className="field">记录类型<select value={kind} onChange={(event) => {
-          setKind(event.target.value as Kind); setColumns(undefined); setError('');
+          const next = event.target.value as Kind;
+          setKind(next);
+          if (columns) setColumns(matchColumns(columns.columns, next));
+          setError('');
         }}>{kinds.map((value) => <option key={value} value={value}>{kindLabels[value]}</option>)}</select></label>
         {file.sheets?.length
           ? <label className="field">工作表<select value={source.sheet} onChange={(event) => updateSource({ sheet: event.target.value })}>
@@ -189,10 +203,17 @@ export function ImportWizard({ run, close, notify, imported }: {
       </div>
       {preview.rows.length > 0 && <div className="preview-table-wrap"><table className="preview-table">
         <thead><tr><th>行</th><th>记录</th><th>状态</th><th>说明</th></tr></thead>
-        <tbody>{preview.rows.map((row) => <tr key={row.index}>
+        <tbody>{preview.rows.slice(page * previewPageSize, (page + 1) * previewPageSize).map((row) => <tr key={row.index}>
           <td>{row.index}</td><td>{row.title}</td><td><span className={`preview-status ${row.status}`}>{rowStatus[row.status]}</span></td><td>{row.message}</td>
         </tr>)}</tbody>
       </table></div>}
+      {preview.rows.length > previewPageSize && <nav className="preview-pages" aria-label="预览分页">
+        <button type="button" className="text-button" disabled={page === 0}
+          onClick={() => setPage(page - 1)}>上一页</button>
+        <span aria-live="polite">第 {page + 1} / {Math.ceil(preview.rows.length / previewPageSize)} 页</span>
+        <button type="button" className="text-button" disabled={(page + 1) * previewPageSize >= preview.rows.length}
+          onClick={() => setPage(page + 1)}>下一页</button>
+      </nav>}
       {preview.errorCount > 0 && <label className="checkbox skip-duplicates"><input type="checkbox" checked={skipErrors} disabled={busy}
         onChange={(event) => setSkipErrors(event.target.checked)} />跳过错误行，导入其余记录</label>}
       <Notice>{error}</Notice>
